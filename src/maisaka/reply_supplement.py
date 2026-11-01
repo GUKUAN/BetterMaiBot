@@ -194,6 +194,18 @@ async def resolve_supplement(
 async def generate_reply_supplement(
     snapshot: PlannerRequestSnapshot, guidance: str, session_id: str, is_group: bool,
 ) -> ReplySupplement:
+    """补充生成失败时携带错误重生成一次，再失败由回复链路跳过补充。"""
+    try:
+        return await _generate_reply_supplement_once(snapshot, guidance, session_id, is_group)
+    except Exception as exc:
+        logger.warning(f"回复补充器生成失败，将重生成一次: session={session_id}", exc_info=True)
+        retry_error = f"{type(exc).__name__}: {exc}"
+    return await _generate_reply_supplement_once(snapshot, guidance, session_id, is_group, retry_error=retry_error)
+
+
+async def _generate_reply_supplement_once(
+    snapshot: PlannerRequestSnapshot, guidance: str, session_id: str, is_group: bool, *, retry_error: str = "",
+) -> ReplySupplement:
     """保留 Planner 的模型、工具及消息前缀，只在末尾追加编排任务。"""
     resources = SupplementResources.capture(snapshot, session_id, is_group)
 
@@ -214,6 +226,12 @@ async def generate_reply_supplement(
         request.context_items.append(
             ContextItemBuilder().set_role(RoleType.User).add_text_content(instruction).build()
         )
+        if retry_error:
+            request.context_items.append(
+                ContextItemBuilder().set_role(RoleType.User).add_text_content(
+                    load_prompt("reply_supplement_retry", error=retry_error),
+                ).build()
+            )
         return request
 
     request = await asyncio.to_thread(build_request)

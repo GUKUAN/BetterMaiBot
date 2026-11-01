@@ -397,7 +397,7 @@ async def execute_reply(
 
     普通 Planner 直接调用；Focus 的 reply 工具经参数解包后调用同一入口。
     target_message 可传入请求前固定的真实消息，避免生成期间历史变化影响引用目标。
-    supplement_runner 在正文生成时并行运行；两者完成并校验后才开始发送。
+    supplement_runner 在正文生成时并行运行；补充失败时跳过补充，正文成功即可发送。
     """
 
     invocation_arguments = deepcopy(arguments)
@@ -531,8 +531,15 @@ async def execute_reply(
         if supplement_runner is None:
             success, reply_result = await generation
         else:
+            async def run_optional_supplement() -> Optional["ReplySupplement"]:
+                try:
+                    return await supplement_runner()
+                except Exception:
+                    logger.exception(f"{tool_ctx.runtime.log_prefix} 回复补充生成失败，跳过补充并继续发送正文")
+                    return None
+
             # 明确收回另一分支：失败或取消后不能遗留仍在生成的后台任务。
-            tasks = [asyncio.create_task(generation), asyncio.create_task(supplement_runner())]
+            tasks = [asyncio.create_task(generation), asyncio.create_task(run_optional_supplement())]
             try:
                 generation_result, supplement = await asyncio.gather(*tasks)
                 success, reply_result = generation_result
@@ -541,7 +548,8 @@ async def execute_reply(
                     if not task.done():
                         task.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)
-            reply_result.metrics.extra["reply_supplement"] = supplement.metadata
+            if supplement is not None:
+                reply_result.metrics.extra["reply_supplement"] = supplement.metadata
     except Exception as exc:
         logger.exception(
             f"{tool_ctx.runtime.log_prefix} 回复生成器执行异常: 目标消息编号={target_message_id} 异常={exc}"
@@ -657,7 +665,7 @@ async def execute_reply(
     reply_metadata = _build_monitor_metadata(reply_result, extension_execution.reply_id)
     if extension_execution.targets:
         reply_metadata["reply_extensions"] = list(extension_execution.parameters)
-    # 旧链路按首段正文与当前聊天情境抽样一次；补充器明确选定的引用挂在首段正文上。
+    # 两条链路均按首段正文与当前聊天情境抽样一次；补充器只选择候选引用目标。
     first_reply_index = next(
         (index for index, sequence in enumerate(reply_sequences)
          if any(isinstance(c, TextComponent) and c.text.strip() for c in sequence.components)), 0,
@@ -666,12 +674,14 @@ async def execute_reply(
         "".join(c.text for c in reply_sequences[first_reply_index].components if isinstance(c, TextComponent))
         if reply_sequences else ""
     )
-    if supplement is None:
+    if supplement is None or supplement.quote_message is not None:
         set_quote, quote_probability = await _resolve_reply_quote(tool_ctx, first_text, target_message)
     else:
-        set_quote, quote_probability = supplement.quote_message is not None, None
+        # 补充器未选择引用目标时，不对原始回复目标额外发起引用。
+        set_quote, quote_probability = False, 0.0
+    if supplement is not None:
         reply_metadata["reply_supplement"] = supplement.metadata
-    # 旧链路保留群聊/私聊的三档抽样；补充器在解析编排时同样遵守「不引用」设置。
+    # 补充器选中的引用同样遵守群聊/私聊的三档频率与 CLI 平台限制。
     effective_set_quote = set_quote
     if quote_probability is not None:
         reply_metadata["quote_probability"] = quote_probability
