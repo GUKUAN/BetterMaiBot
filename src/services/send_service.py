@@ -823,6 +823,7 @@ def _sync_sent_message_to_maisaka_history(
 
         runtime = heartflow_manager.heartflow_chat_list.get(session_id)
         if runtime is None:
+            logger.warning(f"[SendService] 同步消息到 Maisaka 历史失败：未找到运行时 session_id={session_id}")
             return
         runtime.append_sent_message_to_chat_history(message, source_kind=source_kind)
     except Exception as exc:

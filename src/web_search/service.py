@@ -68,7 +68,7 @@ class WebSearchService:
                     if set(arguments) - {"query", "max_results"}:
                         raise WebSearchError("web_search 仅支持 query 和 max_results")
                     query = arguments.get("query")
-                    count = arguments.get("max_results", 5)
+                    count = arguments.get("max_results", 8)
                     if not isinstance(query, str) or not query.strip() or len(query) > 1000:
                         raise WebSearchError("query 必须是非空字符串且不超过 1000 个字符")
                     if type(count) is not int or not 1 <= count <= 20:
