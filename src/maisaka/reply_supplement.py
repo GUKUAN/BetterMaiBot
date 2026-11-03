@@ -14,6 +14,7 @@ from src.common.data_models.message_component_data_model import (
     AtComponent, BaseMessageComponentModel, ImageComponent, MessageSequence, TextComponent,
 )
 from src.common.logger import get_logger
+from src.common.utils.utils_llm_output import strip_code_fence
 from src.common.prompt_i18n import load_prompt
 from src.config.config import global_config
 from src.llm_models.model_client.base_client import ResponseRequest
@@ -242,6 +243,6 @@ async def generate_reply_supplement(
     logger.info(f"回复补充器缓存: session={session_id} {metadata}")
     if result.tool_calls or result.native_tool_calls:
         raise ValueError("回复补充器不得调用工具")
-    plan = ReplySupplementPlan.model_validate_json(result.response)
+    plan = ReplySupplementPlan.model_validate_json(strip_code_fence(result.response))
     metadata["plan"] = plan.model_dump()
     return await resolve_supplement(plan, resources, metadata)

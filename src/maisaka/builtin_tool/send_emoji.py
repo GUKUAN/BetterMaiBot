@@ -16,6 +16,7 @@ from src.cli.maisaka_cli_sender import CLI_PLATFORM_NAME
 from src.common.data_models.image_data_model import MaiEmoji
 from src.common.data_models.message_component_data_model import ImageComponent, MessageSequence, TextComponent
 from src.common.logger import get_logger
+from src.common.utils.utils_llm_output import strip_code_fence
 from src.config.config import config_manager, global_config
 from src.core.tooling import ToolExecutionContext, ToolExecutionResult, ToolInvocation, ToolSpec
 from src.emoji_system.emoji_manager import _is_vlm_task_configured, emoji_manager
@@ -410,7 +411,7 @@ async def _select_emoji_with_sub_agent(
         selection_metadata["prompt_html_uri"] = response.prompt_html_uri
 
     try:
-        selection = EmojiSelectionResult.model_validate_json(response.content or "")
+        selection = EmojiSelectionResult.model_validate_json(strip_code_fence(response.content or ""))
     except Exception as exc:
         logger.warning(f"{tool_ctx.runtime.log_prefix} 表情包子代理结果解析失败，将回退到候选首项: {exc}")
         if selection_metadata is not None:

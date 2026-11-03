@@ -491,6 +491,14 @@ async def execute_reply(
         )
 
     replyer_chat_history = list(tool_ctx.runtime._chat_history)
+    # Planner 运行期间新到的消息还在 pending 缓存里没入库；不并入的话
+    # replyer 会基于过时片段创作（漏掉对方最新的话，产出无指代的怪回复）。
+    pending_history = await tool_ctx.runtime.build_pending_reply_history()
+    if pending_history:
+        seen_ids = {getattr(item, "message_id", None) for item in replyer_chat_history}
+        replyer_chat_history.extend(
+            item for item in pending_history if getattr(item, "message_id", None) not in seen_ids
+        )
     if config_module.global_config.debug.replyer_retro_prompt:
         replyer_chat_history = await tool_ctx.runtime.build_retro_reply_history()
     # 并行编排的引用目标尚未确定，不能把请求快照的最后一条消息强制指定为正文回复对象。

@@ -564,6 +564,10 @@ class LLMContextMessage(ABC):
         return True
 
 
+SELF_SENT_SOURCE_KINDS = frozenset({"guided_reply", "plugin_send", "outbound_send"})
+"""bot 自己发出去的消息来源。这些消息在上下文里应当算 assistant，否则会和用户的话混成同一方。"""
+
+
 @dataclass(slots=True)
 class ContentContextMessage(LLMContextMessage):
     """以 user 角色传给模型的图文内容；不表示内容来自 IM。"""
@@ -589,8 +593,15 @@ class ContentContextMessage(LLMContextMessage):
         return self.visible_text
 
     @property
+    def is_self_sent(self) -> bool:
+        """这条消息是否由 bot 自己发出。"""
+
+        return self.source_kind in SELF_SENT_SOURCE_KINDS
+
+    @property
     def role(self) -> str:
-        return RoleType.User.value
+        # 自己发的话走 assistant：只靠 is_self_message 属性区分时模型经常认成别人说的
+        return RoleType.Assistant.value if self.is_self_sent else RoleType.User.value
 
     @property
     def processed_plain_text(self) -> str:
@@ -605,7 +616,7 @@ class ContentContextMessage(LLMContextMessage):
         max_image_side: Optional[int] = None,
     ) -> ContextItem | None:
         return _build_item_from_sequence(
-            RoleType.User,
+            RoleType.Assistant if self.is_self_sent else RoleType.User,
             self.raw_message,
             self.processed_plain_text,
             enable_visual_message=enable_visual_message,
@@ -708,7 +719,7 @@ class ComplexSessionMessage(SessionBackedMessage):
         del enable_visual_message, limit_emoji_size, max_image_side
         message_sequence = MessageSequence([TextComponent(self.prompt_text)])
         return _build_item_from_sequence(
-            RoleType.User,
+            RoleType.Assistant if self.is_self_sent else RoleType.User,
             message_sequence,
             self.prompt_text,
             meta=ContextItemMeta.create(item_id=self.context_item_id, timestamp=self.timestamp),

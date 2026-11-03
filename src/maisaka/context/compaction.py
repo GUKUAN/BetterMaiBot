@@ -10,6 +10,7 @@ from src.common.data_models.llm_service_data_models import LLMResponseResult
 from src.agent.planner import ACPPlannerSnapshot, generate_planner_response
 from src.common.data_models.message_component_data_model import ReplyComponent
 from src.common.logger import get_logger
+from src.common.utils.utils_llm_output import strip_code_fence
 from src.common.prompt_i18n import load_prompt
 from src.config.config import global_config
 from src.llm_models.model_client.base_client import ResponseRequest
@@ -244,7 +245,8 @@ async def build_context_summary(
         logger.exception("上下文压缩请求记录保存失败")
     if result.tool_calls or result.native_tool_calls:
         raise ValueError("压缩响应包含被禁止的工具调用，拒绝提交摘要")
-    rendered = ConversationState.model_validate_json(result.response).render()
+    # 模型有时把 JSON 包进 ```json 代码块，直接解析会炸掉整个压缩流程
+    rendered = ConversationState.model_validate_json(strip_code_fence(result.response)).render()
     if not rendered or len(rendered) > max_summary_chars:
         raise ValueError(f"状态摘要为空或超过字符预算: {len(rendered)}/{max_summary_chars}")
     logger.info(

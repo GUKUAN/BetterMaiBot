@@ -53,6 +53,7 @@ from .official_configs import (
     PluginRuntimeConfig,
     ResponsePostProcessConfig,
     ResponseSplitterConfig,
+    SubPlannerConfig,
     TelemetryConfig,
     VisualConfig,
     VoiceConfig,
@@ -74,8 +75,8 @@ BOT_CONFIG_PATH: Path = (CONFIG_DIR / "bot_config.toml").resolve().absolute()
 MODEL_CONFIG_PATH: Path = (CONFIG_DIR / "model_config.toml").resolve().absolute()
 LEGACY_ENV_PATH: Path = (PROJECT_ROOT / ".env").resolve().absolute()
 MMC_VERSION: str = read_project_version(PROJECT_ROOT)
-CONFIG_VERSION: str = "8.15.68"
-MODEL_CONFIG_VERSION: str = "1.17.25"
+CONFIG_VERSION: str = "8.15.69"
+MODEL_CONFIG_VERSION: str = "1.17.26"
 
 logger = get_logger("config")
 
@@ -129,6 +130,9 @@ class Config(ConfigBase):
 
     experimental: ExperimentalConfig = Field(default_factory=ExperimentalConfig)
     """实验性功能配置类"""
+
+    sub_planner: SubPlannerConfig = Field(default_factory=SubPlannerConfig)
+    """副思考配置类"""
 
     visual: VisualConfig = Field(default_factory=VisualConfig)
     """视觉配置类"""

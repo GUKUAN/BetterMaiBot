@@ -67,6 +67,7 @@ from src.maisaka.monitor.message_payload import (
     build_monitor_message_media,
     build_monitor_reply_preview,
 )
+from src.maisaka.sub_planner import SubPlannerDecider
 from src.maisaka.turn_trigger import IdleBackoffController, MessageTurnScheduler
 from src.mcp_module.provider import MCPToolProvider
 from src.mcp_module.service import get_mcp_service
@@ -77,6 +78,7 @@ from src.plugin_runtime.tool_provider import PluginToolProvider
 from src.services.message_word_frequency_service import update_high_frequency_terms_from_context_messages
 
 from .chat_loop_service import ChatResponse, MaisakaChatLoopService
+from .planner_task import PlannerTaskState
 from .reasoning_engine import MaisakaReasoningEngine
 from .subagent_tasks import SubAgentTask, SubAgentTaskManager, format_tool_usage
 
@@ -87,7 +89,7 @@ logger = get_logger("maisaka_runtime")
 
 MAX_INTERNAL_ROUNDS = 16
 MAX_RETAINED_MESSAGE_CACHE_SIZE = 200
-CONTEXT_RESTORE_FILL_RATIO = 0.5
+CONTEXT_RESTORE_FILL_RATIO = 1.0
 CONTEXT_RESTORE_SHORT_RESTART_SECONDS = 5 * 60
 CONTEXT_RESTORE_SHORT_OFFLINE_SECONDS = 30 * 60
 CONTEXT_RESTORE_LONG_SLEEP_SECONDS = 6 * 60 * 60
@@ -95,11 +97,14 @@ CONTEXT_RESTORE_DAY_SECONDS = 24 * 60 * 60
 
 
 class PlannerInterruptController:
-    """维护当前可打断的 Planner 请求；同一次请求只打断一次。"""
+    """维护当前可打断的 Planner 请求；同一次请求只打断一次，并受整轮打断预算约束。"""
 
-    def __init__(self) -> None:
+    def __init__(self, budget: int = 0) -> None:
         self._flag: Optional[asyncio.Event] = None
         self._requested = False
+        # 预算跨 LLM 请求累计、按整轮重置；budget <= 0 表示不限，与未引入预算时行为一致
+        self._unlimited = budget <= 0
+        self._remaining = max(0, budget)
 
     def bind(self, interrupt_flag: asyncio.Event) -> None:
         """绑定当前可打断请求使用的中断标记。"""
@@ -114,15 +119,30 @@ class PlannerInterruptController:
             self._flag = None
         self._requested = False
 
-    def request(self) -> Literal["request", "duplicate", "idle"]:
-        """尝试发起打断，返回 request/duplicate/idle。"""
+    def reset_budget(self, budget: int) -> None:
+        """按配置重置当前整轮可用的打断次数。"""
+
+        self._unlimited = budget <= 0
+        self._remaining = max(0, budget)
+
+    def has_budget_left(self) -> bool:
+        """当前整轮是否还能再打断一次。"""
+
+        return self._unlimited or self._remaining > 0
+
+    def request(self) -> Literal["request", "duplicate", "idle", "exhausted"]:
+        """尝试发起打断，返回 request/duplicate/idle/exhausted。"""
 
         if self._flag is None:
             return "idle"
         if self._requested:
             return "duplicate"
+        if not self.has_budget_left():
+            return "exhausted"
 
         self._requested = True
+        if not self._unlimited:
+            self._remaining -= 1
         self._flag.set()
         return "request"
 
@@ -204,6 +224,8 @@ class MaisakaHeartFlowChatting(MaisakaRuntimeDisplayMixin):
         self._forced_turn_reason = ""
         self._planner_continuation_active = False
         self._planner_interrupt = PlannerInterruptController()
+        self._planner_task: Optional[PlannerTaskState] = None
+        self._sub_planner = SubPlannerDecider(self)
         self._monitor_session_start_task: Optional[asyncio.Task[None]] = None
         self._monitor_visual_refresh_keys: set[tuple[str, str]] = set()
         self._tool_registry = ToolRegistry()
@@ -303,6 +325,27 @@ class MaisakaHeartFlowChatting(MaisakaRuntimeDisplayMixin):
         recent_messages = select_messages_after_latest_clear_marker(recent_messages)
         history: List[LLMContextMessage] = []
         for message in recent_messages:
+            if message.is_notify:
+                continue
+            history_message = await self._reasoning_engine._build_history_message(
+                message,
+                source_kind=self._resolve_restored_message_source_kind(message),
+            )
+            if history_message is not None:
+                history.append(history_message)
+        return history
+
+    async def build_pending_reply_history(self) -> List[LLMContextMessage]:
+        """把 pending 缓存里尚未入库的消息转为上下文消息，供 replyer 追加查看。
+
+        Planner 运行期间新到的消息留在 message_cache，本轮结束才入库；
+        replyer 若只看 _chat_history，就会基于过时片段创作（漏掉对方最新的话）。
+        这里只读不消费，消费指针仍由 _collect_pending_messages 推进。
+        """
+
+        pending = self.message_cache[self._last_processed_index:]
+        history: List[LLMContextMessage] = []
+        for message in pending:
             if message.is_notify:
                 continue
             history_message = await self._reasoning_engine._build_history_message(
@@ -609,6 +652,10 @@ class MaisakaHeartFlowChatting(MaisakaRuntimeDisplayMixin):
                 source_kind=source_kind,
             )
             self._chat_history.append(history_message)
+            logger.info(
+                f"{self.log_prefix} 发送的消息已同步进历史: msg_id={message.message_id} "
+                f"source_kind={source_kind} 历史条数={len(self._chat_history)}"
+            )
             if self._focus_group is not None:
                 self._focus_group.record_sent_message(self, history_message)
             self._quote_counter.record(message)
@@ -1035,7 +1082,8 @@ class MaisakaHeartFlowChatting(MaisakaRuntimeDisplayMixin):
                 self._chat_history.append(history_message)
             await self._focus_group.register_message(self, message, history_message)
             return
-        self._request_planner_interrupt_for_message(message)
+        # 由副思考决定要不要打断正在进行的思考；判定不开时它内部直接回落到原来的打断逻辑
+        self._sub_planner.observe(message)
         if self._running:
             self._schedule_message_turn()
 
@@ -1051,6 +1099,13 @@ class MaisakaHeartFlowChatting(MaisakaRuntimeDisplayMixin):
 
         request_result = self._planner_interrupt.request()
         if request_result == "idle":
+            return
+        if request_result == "exhausted":
+            # 本轮已经打断到上限，再打断只会延长决策却拿不到产出，交给下一轮整批处理
+            logger.info(
+                f"{self.log_prefix} 收到新消息，但本轮打断次数已达上限，不再打断规划器; "
+                f"消息编号={message.message_id} 待处理={self._get_pending_message_count()} 条"
+            )
             return
         if request_result == "duplicate":
             logger.info(

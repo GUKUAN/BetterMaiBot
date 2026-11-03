@@ -497,6 +497,15 @@ class ModelTaskConfig(ConfigBase):
     )
     """快速模型配置，用于表达方式选择、回复断句等需要快速完成的小任务，建议选择响应快的模型；留空时用 utils 模型"""
 
+    sub_planner: TaskConfig = Field(
+        default_factory=TaskConfig,
+        json_schema_extra={
+            "x-widget": "custom",
+            "advanced": True,
+        },
+    )
+    """副思考判定模型配置，只回答「这条新消息要不要影响当前思考」；留空时不启用模型判定，只走规则"""
+
     emoji: TaskConfig = Field(
         default_factory=TaskConfig,
         json_schema_extra={

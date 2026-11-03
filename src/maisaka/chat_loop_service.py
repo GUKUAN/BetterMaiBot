@@ -97,9 +97,12 @@ FOCUS_PLANNER_FINAL_USER_REMINDER_TEMPLATE = (
 )
 PLANNER_FINAL_USER_REMINDER = "请你进行分析，是不调用工具，进行思考和等待\n还是使用工具搜集处理信息或使用reply回复"
 PASSIVE_PLANNER_FINAL_USER_REMINDERS = {
-    "zh-CN": "需要信息或操作时调用工具；决定发言时直接输出指导正文，不附带工具调用；不发言用 stop，需要稍后判断用 wait。",
-    "en-US": "Use tools for information or actions. To speak, output guidance without tool calls. Use stop to stay silent, or wait to reconsider later.",
-    "ja-JP": "情報や操作が必要ならツールを使い、発言する場合はツール呼び出しを伴わない指針本文を出力してください。発言しない場合は stop、後で再判断する場合は wait を使ってください。",
+    "zh-CN": "需要信息或操作时调用工具；决定发言时直接输出指导正文，不附带工具调用；不发言用 stop，需要稍后判断用 wait。"
+             "如果这条话主要在回应某一条具体消息，在正文最前面单独一行写 reply_to:那条消息的msg_id，系统会按它设置引用；不写则默认引用最新一条消息。",
+    "en-US": "Use tools for information or actions. To speak, output guidance without tool calls. Use stop to stay silent, or wait to reconsider later."
+             "If this reply mainly answers one specific message, put a line 'reply_to:<msg_id of that message>' at the very top; otherwise the newest message is quoted by default.",
+    "ja-JP": "情報や操作が必要ならツールを使い、発言する場合はツール呼び出しを伴わない指針本文を出力してください。発言しない場合は stop、後で再判断する場合は wait を使ってください。"
+             "この返信が特定のメッセージへの回答なら、本文の最初に reply_to:そのメッセージのmsg_id を単独の行で書いてください。書かない場合は最新のメッセージが引用されます。",
 }
 
 
@@ -1017,6 +1020,29 @@ class MaisakaChatLoopService:
                 "en-US": f'Your nickname in this group is "{self._bot_group_cardname}".',
                 "ja-JP": f"このグループでのあなたのニックネームは「{self._bot_group_cardname}」です。",
             }))
+        # 平台昵称（如 mai）和消息里显示的名字（如 麦麦）可能不同；不写明的话模型会把
+        # 「麦麦」的消息当成别人说的，跟着自己的旧话题凑热闹。
+        self_display_names = sorted({
+            name for name in (
+                (
+                    message.original_message.message_info.user_info.user_cardname
+                    or message.original_message.message_info.user_info.user_nickname
+                    or ""
+                ).strip()
+                for message in history
+                if isinstance(message, SessionBackedMessage)
+                and message.is_self_sent
+                and message.original_message.session_id == self._session_id
+            )
+            if name and name != bot_name
+        })
+        if self_display_names:
+            joined = "」「".join(self_display_names)
+            lines.append(self._localized_text({
+                "zh-CN": f"聊天记录里 user 显示为「{joined}」的消息也是你自己发的，别当成别人说的。",
+                "en-US": f'Messages whose user is "{joined}" in the chat log are also your own; do not treat them as someone else\'s.',
+                "ja-JP": f"チャット記録で user が「{joined}」になっている発言もあなた自身のものです。他人の発言と混同しないでください。",
+            }))
         return (" " if get_locale() == "en-US" else "").join(lines)
 
     @defer_context_image_encoding(lambda result: result[0])
@@ -1189,6 +1215,11 @@ class MaisakaChatLoopService:
             is_group_chat=self._is_group_chat,
         )
         # 上下文可能触发表情包解码、缩放和缓存等待，在线程池执行，避免阻塞事件循环。
+        history_kinds: dict[str, int] = {}
+        for history_entry in selected_history:
+            name = f"{type(history_entry).__name__}:{getattr(history_entry, 'role', '?')}"
+            history_kinds[name] = history_kinds.get(name, 0) + 1
+        logger.debug(f"[{self._session_id}] 请求上下文选入 {len(selected_history)} 条: {history_kinds}")
         built_messages, history_item_count = await asyncio.to_thread(
             self._build_request_messages,
             selected_history,
@@ -1207,6 +1238,12 @@ class MaisakaChatLoopService:
                 max_image_num=global_config.visual.max_image_num,
                 preserved_item_ids=preserved_image_item_ids,
             )
+
+        built_kinds: dict[str, int] = {}
+        for built_item in built_messages:
+            built_name = type(built_item).__name__
+            built_kinds[built_name] = built_kinds.get(built_name, 0) + 1
+        logger.debug(f"[{self._session_id}] 实际构建 {len(built_messages)} 条: {built_kinds}")
 
         def context_factory(_client: BaseClient) -> List[ContextItem]:
             """返回当前轮次已经构建好的请求 Context Items。

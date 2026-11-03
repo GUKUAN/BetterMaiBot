@@ -598,6 +598,22 @@ class ChatReplyTimingConfig(ConfigBase):
     )
     """强制 Planner 使用流式请求；思考或输出期间收到新消息立即打断并带上新消息重新请求，wait 等待也可被新消息提前结束。"""
 
+    planner_interrupt_budget: int = Field(
+        default=2,
+        ge=0,
+        json_schema_extra={
+            "label": {
+                "zh_CN": "单轮打断上限",
+                "en_US": "Interrupts per turn",
+                "ja_JP": "1ターンあたりの中断上限",
+            },
+            "x-widget": "input",
+            "x-description-display": "icon",
+            "advanced": True,
+        },
+    )
+    """仅在快速反应模式下生效：一次思考最多被新消息打断几次。用完后本轮直接收尾，剩余消息留待下一次触发整批处理；0 表示不限制。"""
+
     talk_value: float = Field(
         default=1,
         ge=0,
@@ -1176,6 +1192,105 @@ class ExperimentalConfig(ConfigBase):
         },
     )
     """_wrap_同组聊天共享 Planner 与完整上下文，不同组独立运行；未匹配的聊天各自形成独立组。"""
+
+
+class SubPlannerConfig(ConfigBase):
+    """副思考配置类：新消息到达时先判断要不要影响正在进行的思考。"""
+
+    __ui_label__ = "副思考"
+    __ui_icon__ = "git-branch"
+    __ui_order__ = 45
+
+    enable: bool = Field(
+        default=False,
+        json_schema_extra={
+            "label": {
+                "zh_CN": "启用副思考",
+                "en_US": "Enable sub planner",
+                "ja_JP": "サブプランナーを有効化",
+            },
+            "x-widget": "switch",
+        },
+    )
+    """开启后，思考期间到达的新消息先由副思考判断影响程度，只有确实需要时才打断主思考；关闭时沿用快速反应模式的直接打断。"""
+
+    rule_only: bool = Field(
+        default=False,
+        json_schema_extra={
+            "label": {
+                "zh_CN": "只用规则判定",
+                "en_US": "Rules only",
+                "ja_JP": "ルール判定のみ",
+            },
+            "x-widget": "switch",
+            "advanced": True,
+        },
+    )
+    """开启后不调用模型，只按规则判断：点名、引用触发消息、工具执行中等情况照常处理，其余消息不打断主思考。"""
+
+    cooldown_seconds: float = Field(
+        default=3.0,
+        ge=0,
+        json_schema_extra={
+            "label": {
+                "zh_CN": "判定冷却",
+                "en_US": "Decision cooldown",
+                "ja_JP": "判定クールダウン",
+            },
+            "x-widget": "input",
+            "x-description-display": "icon",
+            "advanced": True,
+        },
+    )
+    """同一次思考里两次判定的最小间隔，用来把连续发言合并成一批；0 表示不冷却。"""
+
+    max_decisions_per_task: int = Field(
+        default=3,
+        ge=1,
+        json_schema_extra={
+            "label": {
+                "zh_CN": "单次思考判定上限",
+                "en_US": "Decisions per turn",
+                "ja_JP": "1ターンあたりの判定上限",
+            },
+            "x-widget": "input",
+            "x-description-display": "icon",
+            "advanced": True,
+        },
+    )
+    """同一次思考最多调用几次模型判定；用完后新消息回到原来的直接打断逻辑。"""
+
+    timeout_seconds: float = Field(
+        default=4.0,
+        ge=1,
+        json_schema_extra={
+            "label": {
+                "zh_CN": "判定超时",
+                "en_US": "Decision timeout",
+                "ja_JP": "判定タイムアウト",
+            },
+            "x-widget": "input",
+            "x-description-display": "icon",
+            "advanced": True,
+        },
+    )
+    """单次模型判定的超时秒数；超时按「不影响主思考」处理，不打断。"""
+
+    max_batch_messages: int = Field(
+        default=6,
+        ge=1,
+        json_schema_extra={
+            "label": {
+                "zh_CN": "单次判定消息数",
+                "en_US": "Messages per decision",
+                "ja_JP": "1回の判定に含めるメッセージ数",
+            },
+            "x-widget": "input",
+            "x-description-display": "icon",
+            "advanced": True,
+        },
+    )
+    """一次判定最多带上几条新消息，超出部分留给下一次判定。"""
 
 
 class MessageReceiveConfig(ConfigBase):

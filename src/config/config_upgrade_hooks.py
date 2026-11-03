@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
-from .official_configs import ChatConfig
+from .official_configs import ChatConfig, ChatReplyTimingConfig
 
 
 ConfigUpgradeHookCallable = Callable[[dict[str, Any]], list[str]]
@@ -432,6 +432,20 @@ def _move_planner_message_steering_to_reply_timing(data: dict[str, Any]) -> list
     return ["chat.reply_timing.planner_message_steering"]
 
 
+def _add_planner_interrupt_budget(data: dict[str, Any]) -> list[str]:
+    """8.15.69: 快速反应模式新增单轮打断上限，旧配置按模型默认值补齐。"""
+
+    chat = _as_dict(data.get("chat"))
+    if chat is None:
+        return []
+    timing = _as_dict(chat.get("reply_timing"))
+    if timing is None or "planner_interrupt_budget" in timing:
+        return []
+
+    timing["planner_interrupt_budget"] = ChatReplyTimingConfig().planner_interrupt_budget
+    return ["chat.reply_timing.planner_interrupt_budget"]
+
+
 def _learning_default_item(source: Optional[Dict[str, Any]], rule_type: str) -> Dict[str, Any]:
     """生成指定聊天类型的全局默认规则；没有来源规则时沿用「未命中即开启」的旧行为。"""
 
@@ -619,6 +633,11 @@ BOT_CONFIG_UPGRADE_HOOKS: tuple[ConfigUpgradeHook, ...] = (
         target_version="8.15.62",
         config_names=("bot_config.toml",),
         migrate=_migrate_webui_http_bindings,
+    ),
+    ConfigUpgradeHook(
+        target_version="8.15.69",
+        config_names=("bot_config.toml",),
+        migrate=_add_planner_interrupt_budget,
     ),
 )
 
