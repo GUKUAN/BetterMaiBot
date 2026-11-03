@@ -25,10 +25,10 @@
   <!-- Badges Row -->
   <p>
     <img src="https://img.shields.io/badge/Python-3.12+-8fd6a0?style=flat-square&labelColor=5a544a" alt="Python Version">
-    <img src="https://img.shields.io/github/license/Mai-with-u/MaiBot?label=License&color=8fd6a0&style=flat-square&labelColor=5a544a" alt="License">
-    <img src="https://img.shields.io/github/contributors/Mai-with-u/MaiBot.svg?label=Contributors&color=8fd6a0&style=flat-square&labelColor=5a544a" alt="Contributors">
-    <img src="https://img.shields.io/github/forks/Mai-with-u/MaiBot.svg?label=Forks&color=f08a5d&style=flat-square&labelColor=5a544a" alt="Forks">
-    <img src="https://img.shields.io/github/stars/Mai-with-u/MaiBot?label=Stars&color=ffd84a&style=flat-square&labelColor=5a544a" alt="Stars">
+    <img src="https://img.shields.io/github/license/GUKUAN/BetterMaiBot?label=License&color=8fd6a0&style=flat-square&labelColor=5a544a" alt="License">
+    <img src="https://img.shields.io/github/contributors/GUKUAN/BetterMaiBot.svg?label=Contributors&color=8fd6a0&style=flat-square&labelColor=5a544a" alt="Contributors">
+    <img src="https://img.shields.io/github/forks/GUKUAN/BetterMaiBot.svg?label=Forks&color=f08a5d&style=flat-square&labelColor=5a544a" alt="Forks">
+    <img src="https://img.shields.io/github/stars/GUKUAN/BetterMaiBot?label=Stars&color=ffd84a&style=flat-square&labelColor=5a544a" alt="Stars">
   </p>
 
   <!-- Quick links -->
@@ -39,9 +39,6 @@
     <a href="https://maibot.chat/"><picture><source media="(prefers-color-scheme: dark)" srcset="depends-data/readme/key-website-night.svg"><img src="depends-data/readme/key-website-day.svg" alt="官方网站"></picture></a>
   </p>
 
-  <p>
-    <a href="https://trendshift.io/repositories/20445" target="_blank"><img src="https://trendshift.io/api/badge/repositories/20445" alt="Mai-with-u%2FMaiBot | Trendshift" width="250" height="55"></a>
-  </p>
 </div>
 
 <a id="english"></a>
@@ -69,6 +66,27 @@ MaiSaka 不仅仅是一个机器人，不仅仅是一个可以帮你完成任务
   <img src="depends-data/webui-millennium-showcase.png" width="90%" alt="MaiBot WebUI 千禧主题浅色与夜间模式" style="box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
 </div>
 
+<a id="-bettermaibot-对比--whats-different"></a>
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="depends-data/readme/sec-intro-night.svg"><img src="depends-data/readme/sec-intro-day.svg" alt="BetterMaiBot · 对比" width="100%"></picture>
+
+这个 fork 相对上游 MaiBot 改了这些：
+
+| 功能 | MaiBot 上游 | BetterMaiBot |
+|------|------------|--------------|
+| **双层 Planner（副思考）** | 思考期间新消息无条件打断，连发表情包也会让思考重来 | 新消息先经副思考判定（规则 + 模型两级）：无关闲聊不打扰、话题更新以「补充说明」并入当前思考，只有点名/被引用/推翻意图才真正打断 |
+| **打断预算** | 无上限，被刷屏时一轮思考可以被打断无数次 | 单轮打断次数可配置（`planner_interrupt_budget`），用尽自动收尾，剩余消息下一轮整批处理 |
+| **上下文归属** | Bot 自己发的历史消息和用户消息混在同一方，长对话里经常把自己的话当成别人说的 | Bot 消息以 assistant 角色进入上下文，并在 system 中明示消息记录里的自身显示名（平台昵称与群内昵称不一致也能对上） |
+| **上下文压缩** | 模型把摘要 JSON 包进代码块时整个压缩流程崩溃 | 解析前统一剥代码块，失败重试，摘要进可持久参考 |
+| **重启恢复** | 重启后恢复少量上下文 | 按离线时长分级恢复（短重启 20 条 / 短离线 / 长睡眠），并压缩进可持久摘要 |
+| **回复引用** | 引用固定为最新一条消息，群聊里经常「回 A 引用 B」 | Planner 可用 `reply_to:` 指定引用对象；引用目标会明示给回复器保持人称一致；另有归属守卫在出口兜底 |
+| **回复器纪律** | 回复器可以无视 Planner 的指导自由发挥，话术跑偏、抢台词 | 指导里定下的话题、态度、要点必须保留，回复器只做口语化润色 |
+| **回复器视野** | Planner 思考期间新到的消息对回复器不可见，常基于过时片段创作 | 生成前并入 pending 缓存里的最新消息，回复器看到的是实时完整对话 |
+| **联网搜索** | 单次查询，查询词是模型随手写的 | 英文优先 query + 结果不符自动换写法重试 + 关键结果注入上下文 |
+| **自带插件** | 仅 hello_world 示例 | 内置 `gukuan_tools`（瓜报 / 饭票 / 归属守卫 / 新梗采集，Manager 注册式架构） |
+
+<div align="center">
+  <br>
 <a id="-更新和安装--updates-and-installation"></a>
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="depends-data/readme/sec-install-night.svg"><img src="depends-data/readme/sec-install-day.svg" alt="安装 · INSTALL" width="100%"></picture>
@@ -77,8 +95,8 @@ MaiSaka 不仅仅是一个机器人，不仅仅是一个可以帮你完成任务
 
 <sub><sup><strong>Latest Version: v1.3.17</strong></sup></sub>
 
-- **发布**：[Release](https://github.com/Mai-with-u/MaiBot/releases/) 页面展示了最新发布的正式版。
-  <sub><sup><strong>Download</strong>: Visit the <a href="https://github.com/Mai-with-u/MaiBot/releases/">Release</a> page to get the latest version.</sup></sub>
+- **发布**：[Release](https://github.com/GUKUAN/BetterMaiBot/releases/) 页面展示了本 fork 的最新版本。
+  <sub><sup><strong>Download</strong>: Visit the <a href="https://github.com/GUKUAN/BetterMaiBot/releases/">Release</a> page to get the latest version of this fork.</sup></sub>
 
 - **[部署教程](https://docs.mai-mai.org/manual/)**  
 <sub><sup>Deployment Guide</sup></sub>

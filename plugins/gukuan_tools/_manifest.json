@@ -1,0 +1,41 @@
+{
+  "manifest_version": 2,
+  "id": "gukuan.tools",
+  "version": "3.0.0",
+  "name": "麦麦工具箱",
+  "description": "自研杂项：群里受了委屈会私聊主人告状，饭点会跟主人撒娇要外卖，餐到了、吃完了都回来说一声；每天自己捞新梗写进黑话库，碰上顺口的会主动用一次",
+  "author": {
+    "name": "gukuan",
+    "url": "https://bonebbs.ink"
+  },
+  "license": "MIT",
+  "urls": {
+    "repository": "https://github.com/GUKUAN/BetterMaiBot"
+  },
+  "host_application": {
+    "min_version": "1.0.0",
+    "max_version": "99.99.99"
+  },
+  "sdk": {
+    "min_version": "1.0.0",
+    "max_version": "99.99.99"
+  },
+  "dependencies": [],
+  "plugin_type": "integration",
+  "display": {
+    "icon": {
+      "type": "emoji",
+      "value": "🧰"
+    }
+  },
+  "capabilities": [
+    "llm.generate",
+    "send.text",
+    "chat.open_session",
+    "chat.get_stream_by_user_id",
+    "maisaka.context.append"
+  ],
+  "i18n": {
+    "default_locale": "zh-CN"
+  }
+}
