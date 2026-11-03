@@ -187,6 +187,20 @@ export interface TimingGateResultEvent {
   timestamp: number
 }
 
+export interface SubPlannerDecisionEvent {
+  session_id: string
+  run_id: string
+  cycle_id: number | null
+  method: 'rule' | 'model'
+  kind: 'continue' | 'update' | 'interrupt' | 'defer' | 'timeout' | 'failed'
+  reason: string
+  trigger_summary: string
+  messages_count: number
+  model_name: string
+  duration_ms: number | null
+  timestamp: number
+}
+
 export interface PlannerRequestEvent {
   session_id: string
   cycle_id: number
@@ -439,6 +453,7 @@ export type MaisakaMonitorEvent =
   | { type: 'planner.request'; data: PlannerRequestEvent }
   | { type: 'planner.response'; data: PlannerResponseEvent }
   | { type: 'planner.finalized'; data: PlannerFinalizedEvent }
+  | { type: 'sub_planner.decision'; data: SubPlannerDecisionEvent }
   | { type: 'planner.progress'; data: PlannerFinalizedEvent }
   | { type: 'tool.execution'; data: ToolExecutionEvent }
   | { type: 'replier.request'; data: ReplierRequestEvent }
@@ -490,7 +505,7 @@ class MaisakaMonitorClient {
       }
       if (!decoded && message.event !== 'planner.reset') return
       const event: MaisakaMonitorEvent = decoded
-        ? { type: decoded.event as MaisakaMonitorEvent['type'], data: decoded.data as never }
+        ? ({ type: decoded.event, data: decoded.data } as MaisakaMonitorEvent)
         : { type: 'replay.started', data: {} }
 
       this.listeners.forEach((listener) => {

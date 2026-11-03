@@ -64,7 +64,7 @@ class MaisakaRuntimeDisplayMixin:
         panel_subtitle = self._build_cycle_time_records_text(time_records or {})
         renderables: list[RenderableType] = [Text("\n".join(body_lines))]
         planner_panel = self._build_cycle_stage_panel(
-            title="Planner",
+            title="主 Planner",
             border_style="green",
             selected_history_count=planner_selected_history_count,
             prompt_tokens=planner_prompt_tokens,
@@ -77,7 +77,7 @@ class MaisakaRuntimeDisplayMixin:
             renderables.append(planner_panel)
 
         planner_tool_cards = self._build_tool_activity_cards(
-            stage_title="Planner Tool",
+            stage_title="主 Planner Tool",
             tool_calls=planner_tool_calls,
             tool_results=planner_tool_results,
             tool_detail_results=planner_tool_detail_results,
@@ -207,7 +207,7 @@ class MaisakaRuntimeDisplayMixin:
             return "流程耗时：无"
 
         label_map = {
-            "planner": "Planner",
+            "planner": "主 Planner",
             "tool_calls": "工具执行",
         }
         ordered_keys = ["planner", "tool_calls"]

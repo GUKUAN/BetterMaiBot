@@ -1202,7 +1202,7 @@ class SubPlannerConfig(ConfigBase):
     __ui_order__ = 45
 
     enable: bool = Field(
-        default=False,
+        default=True,
         json_schema_extra={
             "label": {
                 "zh_CN": "启用副思考",

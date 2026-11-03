@@ -78,6 +78,7 @@ import type {
   MessageSentEvent,
   PlannerFinalizedEvent,
   PlannerResponseEvent,
+  SubPlannerDecisionEvent,
   ReplierResponseEvent,
   TimingGateResultEvent,
   ToolExecutionEvent,
@@ -1153,6 +1154,39 @@ function PlannerInterruptedCard({ data }: { data: PlannerFinalizedEvent }) {
   )
 }
 
+function SubPlannerDecisionCard({ data }: { data: SubPlannerDecisionEvent }) {
+  const kindLabel: Record<SubPlannerDecisionEvent['kind'], string> = {
+    continue: '不影响',
+    update: '更新话题',
+    interrupt: '打断主思考',
+    defer: '延后处理',
+    timeout: '判定超时',
+    failed: '判定失败',
+  }
+  const tone = data.kind === 'interrupt' ? 'error' : data.kind === 'update' ? 'success' : 'neutral'
+  return (
+    <TraceStep data-maisaka-trace-card="true" data-maisaka-sub-planner-card="true" tone={tone}>
+      <div className="space-y-2">
+        <div data-maisaka-trace-meta="true" className="flex flex-wrap items-center gap-2">
+          <CardTitle className="text-sm font-medium">子 Planner</CardTitle>
+          <span className="text-muted-foreground rounded border px-1.5 py-0.5 text-xs">
+            {data.method === 'rule' ? '规则判定' : '模型判定'}
+          </span>
+          <span className="rounded px-1.5 py-0.5 text-xs" style={{ background: 'var(--secondary)' }}>
+            {kindLabel[data.kind] ?? data.kind}
+          </span>
+          {data.model_name && <ModelNameBadge modelName={data.model_name} />}
+          {typeof data.duration_ms === 'number' && (
+            <span className="text-muted-foreground text-xs">{(data.duration_ms / 1000).toFixed(2)}s</span>
+          )}
+        </div>
+        <div className="text-muted-foreground text-xs">触发：{data.trigger_summary}</div>
+        {data.reason && <div className="text-sm">{data.reason}</div>}
+      </div>
+    </TraceStep>
+  )
+}
+
 function PlannerResponseCard({ data }: { data: PlannerResponseEvent }) {
   return (
     <div className="flex items-start gap-3">
@@ -1204,7 +1238,7 @@ function PlannerFinalizedCard({
     >
       <div className="space-y-2">
         <div data-maisaka-trace-meta="true" className="flex flex-wrap items-center gap-2">
-          <CardTitle className="text-sm font-medium">Planner</CardTitle>
+          <CardTitle className="text-sm font-medium">主 Planner</CardTitle>
           <ModelNameBadge modelName={planner?.model_name} />
           {data.request && (
             <span className="text-muted-foreground text-xs">
@@ -2325,6 +2359,8 @@ export function TimelineEventRenderer({
       )
     case 'timing_gate.result':
       return <TimingGateCard data={entry.data as TimingGateResultEvent} />
+    case 'sub_planner.decision':
+      return <SubPlannerDecisionCard data={entry.data as SubPlannerDecisionEvent} />
     case 'planner.response':
       return <PlannerResponseCard data={entry.data as PlannerResponseEvent} />
     case 'planner.finalized':

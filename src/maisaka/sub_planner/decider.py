@@ -15,6 +15,7 @@ from src.common.data_models.llm_service_data_models import LLMGenerationOptions
 from src.common.logger import get_logger
 from src.config.config import global_config, model_config
 
+from ..monitor.events import emit_sub_planner_decision
 from ..planner_task import PlannerTaskState
 from .prompt import build_prompt, parse_decision
 from .rules import SubDecision, decide_by_rules
@@ -40,6 +41,7 @@ class SubPlannerDecider:
         self._decided_in_task = 0
         self._model_failures = 0
         self._client = None
+        self._emit_tasks: set[asyncio.Task[None]] = set()
 
     def observe(self, message: SessionMessage) -> None:
         """登记一条新消息并给出结论；不需要模型的路径当场落地。"""
@@ -101,7 +103,15 @@ class SubPlannerDecider:
         task: Optional[PlannerTaskState],
         messages: list[SessionMessage],
         decision: SubDecision,
+        duration_ms: Optional[float] = None,
     ) -> None:
+        self._emit_decision(
+            method="model" if not decision.by_rule else "rule",
+            kind=decision.kind,
+            reason=decision.reason,
+            messages=messages,
+            duration_ms=duration_ms,
+        )
         if decision.kind == "interrupt":
             self._runtime._request_planner_interrupt_for_message(messages[-1])
             return
@@ -113,6 +123,47 @@ class SubPlannerDecider:
             for message in messages:
                 task.note_deferred(message.message_id)
         # continue：什么都不做，消息留在缓存里等主循环到安全节点自己接走
+
+    def _emit_decision(
+        self,
+        *,
+        method: str,
+        kind: str,
+        reason: str,
+        messages: list[SessionMessage],
+        duration_ms: Optional[float] = None,
+    ) -> None:
+        """把判定广播给 WebUI；发不出去绝不影响主流程。"""
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        model_name = self._model_name() if method == "model" else ""
+        coro = emit_sub_planner_decision(
+            session_id=str(self._runtime.session_id or ""),
+            run_id=self._runtime._monitor_run_id,
+            cycle_id=getattr(self._runtime, "_cycle_counter", None),
+            method=method,
+            kind=kind,
+            reason=reason,
+            trigger_summary=self._describe(messages, "")[:200],
+            messages_count=len(messages),
+            model_name=model_name,
+            duration_ms=duration_ms,
+        )
+        task = loop.create_task(coro)
+        self._emit_tasks.add(task)
+        task.add_done_callback(self._emit_tasks.discard)
+
+    def _model_name(self) -> str:
+        """当前副思考用的模型名，取不到就空着。"""
+
+        try:
+            names = model_config.model_task_config.sub_planner.model_list
+            return str(names[0]) if names else ""
+        except Exception:
+            return ""
 
     @staticmethod
     def _describe(messages: list[SessionMessage], reason: str) -> str:
@@ -144,6 +195,7 @@ class SubPlannerDecider:
                     return
 
                 snapshot = (task.task_id, task.version)
+                started = time.time()
                 try:
                     decision = await asyncio.wait_for(
                         self._decide_by_model(batch, task),
@@ -151,10 +203,22 @@ class SubPlannerDecider:
                     )
                 except TimeoutError:
                     logger.info(f"{self._runtime.log_prefix} 副思考判定超时，按不影响主思考处理")
+                    self._emit_decision(
+                        method="model", kind="timeout", reason="判定超时",
+                        messages=batch,
+                        duration_ms=(time.time() - started) * 1000,
+                        model_name=self._model_name(),
+                    )
                     decision = None
                 except Exception as exc:
                     self._model_failures += 1
                     logger.warning(f"{self._runtime.log_prefix} 副思考判定失败: {exc}")
+                    self._emit_decision(
+                        method="model", kind="failed", reason=f"判定失败: {exc}",
+                        messages=batch,
+                        duration_ms=(time.time() - started) * 1000,
+                        model_name=self._model_name(),
+                    )
                     continue
 
                 self._decided_at = time.time()
@@ -165,7 +229,10 @@ class SubPlannerDecider:
                 if self._is_stale(snapshot):
                     logger.debug(f"{self._runtime.log_prefix} 副思考结论已过期，丢弃")
                     continue
-                self._apply(task, batch, decision)
+                self._apply(
+                    task, batch, decision,
+                    duration_ms=(time.time() - started) * 1000,
+                )
         finally:
             self._worker = None
 

@@ -485,6 +485,40 @@ async def emit_flow_step(
     })
 
 
+async def emit_sub_planner_decision(
+    *,
+    session_id: str,
+    run_id: str,
+    cycle_id: Optional[int] = None,
+    method: str,
+    kind: str,
+    reason: str,
+    trigger_summary: str,
+    messages_count: int = 1,
+    model_name: str = "",
+    duration_ms: Optional[float] = None,
+) -> None:
+    """广播副思考的一次判定，供 WebUI 展示「子 Planner」卡片。
+
+    method: rule（规则层直接给结论）/ model（问了轻量模型）
+    kind:   continue / update / interrupt / defer / timeout / failed
+    """
+
+    await _broadcast("sub_planner.decision", {
+        "session_id": session_id,
+        "run_id": run_id,
+        "cycle_id": cycle_id,
+        "method": method,
+        "kind": kind,
+        "reason": reason,
+        "trigger_summary": trigger_summary,
+        "messages_count": messages_count,
+        "model_name": model_name,
+        "duration_ms": duration_ms,
+        "timestamp": time.time(),
+    })
+
+
 async def emit_llm_retry(
     *,
     session_id: str,
