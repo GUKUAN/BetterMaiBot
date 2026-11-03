@@ -18,6 +18,7 @@ def _runtime(monkeypatch, *, steering: bool) -> MaisakaHeartFlowChatting:
     instance._planner_interrupt = PlannerInterruptController()
     instance.log_prefix = "[test]"
     instance.message_cache = []
+    instance._last_processed_index = 0
     return instance
 
 
@@ -43,3 +44,54 @@ def test_same_planner_request_is_interrupted_once() -> None:
 
     controller.unbind(interrupt_flag)
     assert controller.request() == "idle"
+
+
+def test_interrupt_budget_accumulates_across_requests() -> None:
+    """预算按整轮统计：换一次 LLM 请求不会重新发额度。"""
+    controller = PlannerInterruptController(budget=2)
+
+    controller.bind(asyncio.Event())
+    assert controller.request() == "request"
+    assert controller.has_budget_left() is True
+
+    controller.bind(asyncio.Event())
+    assert controller.request() == "request"
+    assert controller.has_budget_left() is False
+
+    controller.bind(asyncio.Event())
+    assert controller.request() == "exhausted"
+
+
+def test_zero_budget_keeps_unlimited_behaviour() -> None:
+    """0 表示不限，等价于引入预算之前的行为。"""
+    controller = PlannerInterruptController()
+
+    for _ in range(5):
+        controller.bind(asyncio.Event())
+        assert controller.request() == "request"
+
+
+def test_reset_budget_restores_allowance() -> None:
+    controller = PlannerInterruptController(budget=1)
+    controller.bind(asyncio.Event())
+    assert controller.request() == "request"
+    assert controller.has_budget_left() is False
+
+    controller.reset_budget(1)
+    controller.bind(asyncio.Event())
+    assert controller.request() == "request"
+
+
+def test_exhausted_budget_does_not_set_interrupt_flag(monkeypatch) -> None:
+    runtime = _runtime(monkeypatch, steering=True)
+    runtime._planner_interrupt = PlannerInterruptController(budget=1)
+
+    first_flag = asyncio.Event()
+    runtime._planner_interrupt.bind(first_flag)
+    runtime._request_planner_interrupt_for_message(SimpleNamespace(message_id="m1"))
+    assert first_flag.is_set() is True
+
+    second_flag = asyncio.Event()
+    runtime._planner_interrupt.bind(second_flag)
+    runtime._request_planner_interrupt_for_message(SimpleNamespace(message_id="m2"))
+    assert second_flag.is_set() is False
