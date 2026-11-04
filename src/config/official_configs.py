@@ -647,6 +647,19 @@ class ChatReplyTimingConfig(ConfigBase):
     )
     """复读检测对比最近多少条自己发过的消息；0 表示关闭检测。"""
 
+    reply_split_by_line: bool = Field(
+        default=True,
+        json_schema_extra={
+            "label": {
+                "zh_CN": "按行拆分发送",
+                "en_US": "Split reply by lines",
+                "ja_JP": "行ごとに分割送信",
+            },
+            "x-widget": "switch",
+        },
+    )
+    """回复正文里带换行的多段内容，发送前拆成多条独立消息（模型输出一整段长文时保持分条习惯）。"""
+
     talk_value: float = Field(
         default=1,
         ge=0,

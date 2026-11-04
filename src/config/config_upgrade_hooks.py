@@ -466,6 +466,19 @@ def _add_reply_repeat_guard(data: dict[str, Any]) -> list[str]:
     return changed
 
 
+def _add_reply_split_by_line(data: dict[str, Any]) -> list[str]:
+    """8.15.71: 按行拆分发送的开关，旧配置按默认值补齐。"""
+
+    chat = _as_dict(data.get("chat"))
+    if chat is None:
+        return []
+    timing = _as_dict(chat.get("reply_timing"))
+    if timing is None or "reply_split_by_line" in timing:
+        return []
+    timing["reply_split_by_line"] = ChatReplyTimingConfig().reply_split_by_line
+    return ["chat.reply_timing.reply_split_by_line"]
+
+
 def _learning_default_item(source: Optional[Dict[str, Any]], rule_type: str) -> Dict[str, Any]:
     """生成指定聊天类型的全局默认规则；没有来源规则时沿用「未命中即开启」的旧行为。"""
 
@@ -653,6 +666,11 @@ BOT_CONFIG_UPGRADE_HOOKS: tuple[ConfigUpgradeHook, ...] = (
         target_version="8.15.62",
         config_names=("bot_config.toml",),
         migrate=_migrate_webui_http_bindings,
+    ),
+    ConfigUpgradeHook(
+        target_version="8.15.71",
+        config_names=("bot_config.toml",),
+        migrate=_add_reply_split_by_line,
     ),
     ConfigUpgradeHook(
         target_version="8.15.70",

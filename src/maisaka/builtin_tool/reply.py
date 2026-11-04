@@ -660,6 +660,34 @@ async def execute_reply(
     reply_sequences = [item.sequence for item in reply_items]
     reply_segments = [build_visible_text_from_sequence(sequence) for sequence in reply_sequences]
 
+    # 按行拆分：模型把多句话挤进一条（段与段之间只有换行）时，拆成独立消息发送，
+    # 保持日常聊天的分条节奏。只拆纯文本段；带图片/表情的编排保持原样。
+    if config_module.global_config.chat.reply_timing.reply_split_by_line and reply_segments:
+        split_items = []
+        for reply_item in reply_items:
+            sequence = reply_item.sequence
+            has_media = any(
+                not isinstance(c, TextComponent) for c in sequence.components
+            )
+            lines = [line.strip() for line in build_visible_text_from_sequence(sequence).split("\n") if line.strip()]
+            if has_media or len(lines) <= 1:
+                split_items.append(reply_item)
+                continue
+            for line_index, line in enumerate(lines):
+                split_items.append(
+                    PostProcessedReplyMessage(
+                        sequence=PluginMessageUtils._message_sequence_from_dict(
+                            [{"type": "text", "data": {"text": line}}]
+                        ),
+                        quote_previous=reply_item.quote_previous and line_index == 0,
+                    )
+                )
+        if len(split_items) != len(reply_items):
+            logger.info(f"{tool_ctx.runtime.log_prefix} 按行拆分：{len(reply_items)} 条 -> {len(split_items)} 条")
+        reply_items = split_items
+        reply_sequences = [item.sequence for item in reply_items]
+        reply_segments = [build_visible_text_from_sequence(sequence) for sequence in reply_sequences]
+
     # 复读断路器：分段与最近几条自己发过的话高度相似就丢掉。
     # 低指令遵循的模型会反复概括自己刚说完的内容，这里在出口处兜住。
     repeat_recent = config_module.global_config.chat.reply_timing.reply_repeat_recent
