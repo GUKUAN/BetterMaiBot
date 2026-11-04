@@ -677,7 +677,7 @@ async def execute_reply(
                 split_items.append(
                     PostProcessedReplyMessage(
                         sequence=PluginMessageUtils._message_sequence_from_dict(
-                            [{"type": "text", "data": {"text": line}}]
+                            [{"type": "text", "data": line}]
                         ),
                         quote_previous=reply_item.quote_previous and line_index == 0,
                     )
