@@ -793,6 +793,11 @@ async def execute_reply(
     if tool_ctx.runtime.chat_stream.platform == CLI_PLATFORM_NAME:
         tool_ctx.append_guided_reply_to_chat_history(combined_reply_text)
     tool_ctx.runtime.record_planner_reply()
+    # 回复已发出，世界状态就变了：作废副思考所有在飞的判定结论，
+    # 否则基于「这些消息还没被回应」的旧结论落地，会对同一批消息再打断一次，造成双重回复。
+    task = tool_ctx.runtime._planner_task
+    if task is not None:
+        task.bump()
     return tool_ctx.build_success_result(
         "reply",
         reply_receipt,
