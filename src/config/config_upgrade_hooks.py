@@ -446,6 +446,26 @@ def _add_planner_interrupt_budget(data: dict[str, Any]) -> list[str]:
     return ["chat.reply_timing.planner_interrupt_budget"]
 
 
+def _add_reply_repeat_guard(data: dict[str, Any]) -> list[str]:
+    """8.15.70: 复读断路器的两个阈值，旧配置按默认值补齐。"""
+
+    chat = _as_dict(data.get("chat"))
+    if chat is None:
+        return []
+    timing = _as_dict(chat.get("reply_timing"))
+    if timing is None:
+        return []
+    changed = []
+    for key, value in (
+        ("reply_repeat_threshold", ChatReplyTimingConfig().reply_repeat_threshold),
+        ("reply_repeat_recent", ChatReplyTimingConfig().reply_repeat_recent),
+    ):
+        if key not in timing:
+            timing[key] = value
+            changed.append(f"chat.reply_timing.{key}")
+    return changed
+
+
 def _learning_default_item(source: Optional[Dict[str, Any]], rule_type: str) -> Dict[str, Any]:
     """生成指定聊天类型的全局默认规则；没有来源规则时沿用「未命中即开启」的旧行为。"""
 
@@ -633,6 +653,11 @@ BOT_CONFIG_UPGRADE_HOOKS: tuple[ConfigUpgradeHook, ...] = (
         target_version="8.15.62",
         config_names=("bot_config.toml",),
         migrate=_migrate_webui_http_bindings,
+    ),
+    ConfigUpgradeHook(
+        target_version="8.15.70",
+        config_names=("bot_config.toml",),
+        migrate=_add_reply_repeat_guard,
     ),
     ConfigUpgradeHook(
         target_version="8.15.69",

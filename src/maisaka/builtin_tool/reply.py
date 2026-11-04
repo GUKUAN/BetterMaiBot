@@ -4,6 +4,7 @@ from copy import deepcopy
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Optional, Tuple
 
 import asyncio
+import difflib
 import json
 import traceback
 
@@ -658,6 +659,47 @@ async def execute_reply(
             )
     reply_sequences = [item.sequence for item in reply_items]
     reply_segments = [build_visible_text_from_sequence(sequence) for sequence in reply_sequences]
+
+    # 复读断路器：分段与最近几条自己发过的话高度相似就丢掉。
+    # 低指令遵循的模型会反复概括自己刚说完的内容，这里在出口处兜住。
+    repeat_recent = config_module.global_config.chat.reply_timing.reply_repeat_recent
+    repeat_threshold = config_module.global_config.chat.reply_timing.reply_repeat_threshold
+    if repeat_recent > 0 and repeat_threshold > 0 and reply_segments:
+        recent_self_texts = []
+        for history_message in reversed(tool_ctx.runtime._chat_history):
+            if not getattr(history_message, "is_self_sent", False):
+                continue
+            past = (history_message.processed_plain_text or "").strip()
+            if past:
+                recent_self_texts.append(past)
+            if len(recent_self_texts) >= repeat_recent:
+                break
+        if recent_self_texts:
+            kept_indexes = []
+            for index, segment in enumerate(reply_segments):
+                segment_text = segment.strip()
+                repeated = any(
+                    difflib.SequenceMatcher(None, segment_text, past).ratio() >= repeat_threshold
+                    for past in recent_self_texts
+                )
+                if repeated:
+                    logger.info(
+                        f"{tool_ctx.runtime.log_prefix} 复读断路：分段与近期发言重复，已丢弃「{segment_text[:30]}」"
+                    )
+                    continue
+                kept_indexes.append(index)
+            if len(kept_indexes) != len(reply_segments):
+                if not kept_indexes:
+                    return tool_ctx.build_failure_result(
+                        "reply",
+                        "回复内容与最近发过的话高度重复，已跳过发送。别再概括刚才说过的内容，"
+                        "要么换个角度说点新的，要么承认没话可说。",
+                        metadata=_build_monitor_metadata(reply_result, extension_execution.reply_id),
+                    )
+                reply_items = [reply_items[i] for i in kept_indexes]
+                reply_sequences = [reply_sequences[i] for i in kept_indexes]
+                reply_segments = [reply_segments[i] for i in kept_indexes]
+
     combined_reply_text = "".join(reply_segments)
     reply_result.completion.response_text = combined_reply_text
     reply_result.text_fragments = reply_segments

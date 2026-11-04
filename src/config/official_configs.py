@@ -614,6 +614,39 @@ class ChatReplyTimingConfig(ConfigBase):
     )
     """仅在快速反应模式下生效：一次思考最多被新消息打断几次。用完后本轮直接收尾，剩余消息留待下一次触发整批处理；0 表示不限制。"""
 
+    reply_repeat_threshold: float = Field(
+        default=0.6,
+        ge=0.0,
+        le=1.0,
+        json_schema_extra={
+            "label": {
+                "zh_CN": "复读判定阈值",
+                "en_US": "Repeat similarity threshold",
+                "ja_JP": "繰り返し類似度しきい値",
+            },
+            "x-widget": "input",
+            "x-description-display": "icon",
+            "advanced": True,
+        },
+    )
+    """回复分段与最近几条自己发言的相似度达到该值时判定为复读并丢弃；0 表示关闭检测。"""
+
+    reply_repeat_recent: int = Field(
+        default=3,
+        ge=0,
+        json_schema_extra={
+            "label": {
+                "zh_CN": "复读对比条数",
+                "en_US": "Recent replies to compare",
+                "ja_JP": "比較する直近発言数",
+            },
+            "x-widget": "input",
+            "x-description-display": "icon",
+            "advanced": True,
+        },
+    )
+    """复读检测对比最近多少条自己发过的消息；0 表示关闭检测。"""
+
     talk_value: float = Field(
         default=1,
         ge=0,
