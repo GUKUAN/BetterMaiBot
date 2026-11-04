@@ -2179,6 +2179,21 @@ class MaisakaReasoningEngine:
         deferred_post_history_messages: list[LLMContextMessage] = []
         should_stop_after_execution = False
 
+        # stop 是终止信号，不是供下一轮参考的工具交互。
+        # 在写入整段模型输出和执行同批工具前截断，避免留下孤立调用、
+        # 参数错误或与终止意图冲突的正文；监控仍保留本轮 Planner 输出。
+        if self.passive_replyer_enabled and any(
+            tool_call.func_name == "stop" for tool_call in tool_calls or []
+        ):
+            self._end_planner_no_tool_cycle(
+                state.planner_extra_lines, status_line="状态：已结束本轮思考"
+            )
+            state.cycle_end = self._cycle_end_for_pause_tool("stop")
+            state.tool_result_summaries = []
+            state.tool_monitor_results = []
+            await self._emit_planner_progress(cycle_detail, state, [], "")
+            return True
+
         if self._runtime._tool_registry is None:
             total_tool_count = len(tool_calls)
             for tool_index, tool_call in enumerate(tool_calls, start=1):
